@@ -1,15 +1,19 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileText, X, Loader2 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker?url';
 
-// Set worker path for pdfjs from CDN
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs`;
+// Configure PDF.js worker (Vite + Vercel safe)
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-// Declare mammoth for the global script included in index.html
+// Declare mammoth (loaded globally via index.html)
 declare const mammoth: any;
 
 interface FileInputProps {
-  onFileParsed: (data: { file: File, text: string } | null, error?: string) => void;
+  onFileParsed: (
+    data: { file: File; text: string } | null,
+    error?: string
+  ) => void;
 }
 
 export const FileInput: React.FC<FileInputProps> = ({ onFileParsed }) => {
@@ -20,43 +24,70 @@ export const FileInput: React.FC<FileInputProps> = ({ onFileParsed }) => {
   const parseFile = async (file: File) => {
     setIsParsing(true);
     setFileName(file.name);
+
     try {
       let text = '';
-      if (file.type === 'application/pdf') {
+
+      // ---------- PDF ----------
+      if (
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf')
+      ) {
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
-          text += content.items.map((item: any) => item.str).join(' ');
+          text +=
+            content.items.map((item: any) => item.str).join(' ') + '\n';
         }
-      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+
+      // ---------- DOCX ----------
+      } else if (
+        file.type ===
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        file.name.toLowerCase().endsWith('.docx')
+      ) {
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
         text = result.value;
-      } else if (file.type === 'text/plain' || file.name.endsWith('.md') || file.name.endsWith('.txt')) {
+
+      // ---------- TXT / MD ----------
+      } else if (
+        file.type === 'text/plain' ||
+        file.name.toLowerCase().endsWith('.txt') ||
+        file.name.toLowerCase().endsWith('.md')
+      ) {
         text = await file.text();
+
       } else {
         throw new Error('Unsupported file type.');
       }
+
       onFileParsed({ file, text });
-    } catch (e: any) {
-      console.error("Error reading file:", e);
-      const message = e.message === 'Unsupported file type.' 
-        ? 'Unsupported file type. Please use .pdf, .docx, .txt, or .md.'
-        : 'Error reading file. The file might be corrupted.';
+
+    } catch (error: any) {
+      console.error('Error reading file:', error);
+
+      const message =
+        error.message === 'Unsupported file type.'
+          ? 'Unsupported file type. Please upload a PDF, DOCX, TXT, or MD file.'
+          : 'Failed to read the file. The file may be corrupted.';
+
       onFileParsed(null, message);
-      setFileName(null); // Clear filename on error
+      setFileName(null);
+
     } finally {
       setIsParsing(false);
     }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null;
-    if (file) {
-      parseFile(file);
-    }
+    const file = event.target.files?.[0];
+    if (file) parseFile(file);
   };
 
   const handleRemoveFile = () => {
@@ -70,13 +101,11 @@ export const FileInput: React.FC<FileInputProps> = ({ onFileParsed }) => {
   const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
   };
-  
+
   const handleDrop = (event: React.DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
-    const file = event.dataTransfer.files?.[0] || null;
-     if (file) {
-      parseFile(file);
-    }
+    const file = event.dataTransfer.files?.[0];
+    if (file) parseFile(file);
   };
 
   return (
@@ -84,45 +113,56 @@ export const FileInput: React.FC<FileInputProps> = ({ onFileParsed }) => {
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
         Upload Your Resume
       </label>
+
       {isParsing ? (
-        <div className="flex items-center justify-center w-full h-32 px-4 transition bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-md">
+        <div className="flex items-center justify-center w-full h-32 px-4 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-md">
           <Loader2 className="w-6 h-6 text-gray-500 dark:text-gray-400 animate-spin" />
-          <span className="font-medium text-gray-600 dark:text-gray-300 ml-3">Parsing file...</span>
+          <span className="ml-3 text-gray-600 dark:text-gray-300">
+            Parsing file...
+          </span>
         </div>
       ) : !fileName ? (
         <label
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="flex justify-center w-full h-32 px-4 transition bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-md appearance-none cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none"
+          className="flex justify-center w-full h-32 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md cursor-pointer hover:border-gray-400"
         >
           <span className="flex items-center space-x-2">
-            <UploadCloud className="w-6 h-6 text-gray-400 dark:text-gray-500" />
-            <span className="font-medium text-gray-600 dark:text-gray-300">
-              Drop file or{' '}
-              <span className="text-gray-900 dark:text-gray-100 underline">browse</span>
+            <UploadCloud className="w-6 h-6 text-gray-400" />
+            <span className="text-gray-600 dark:text-gray-300">
+              Drop file or <span className="underline">browse</span>
             </span>
           </span>
+
           <input
-            type="file"
-            name="file_upload"
-            className="hidden"
-            accept=".pdf,.docx,.txt,.md"
-            onChange={handleFileSelect}
             ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="application/pdf,.docx,.txt,.md"
+            onChange={handleFileSelect}
           />
         </label>
       ) : (
         <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md">
-            <div className="flex items-center gap-2 overflow-hidden">
-                <FileText className="w-5 h-5 text-gray-600 dark:text-gray-300 flex-shrink-0" />
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{fileName}</span>
-            </div>
-            <button onClick={handleRemoveFile} className="text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-500 flex-shrink-0 ml-2">
-                <X className="w-5 h-5" />
-            </button>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <FileText className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+            <span className="truncate text-sm text-gray-800 dark:text-gray-100">
+              {fileName}
+            </span>
+          </div>
+
+          <button
+            onClick={handleRemoveFile}
+            className="text-gray-500 hover:text-red-600"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
       )}
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Supports .pdf, .docx, .txt, and .md files.</p>
+
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Supports PDF, DOCX, TXT, and MD files.
+      </p>
     </div>
   );
 };
