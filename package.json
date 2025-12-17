@@ -8,12 +8,13 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "react": "^19.1.1",
-    "@google/genai": "^1.20.0",
-    "react-dom": "^19.1.1",
-    "recharts": "^3.2.1",
-    "lucide-react": "^0.544.0"
+"dependencies": {
+  "react": "^19.1.1",
+  "@google/genai": "^1.20.0",
+  "react-dom": "^19.1.1",
+  "recharts": "^3.2.1",
+  "lucide-react": "^0.544.0",
+  "pdfjs-dist": "^4.x.x"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
